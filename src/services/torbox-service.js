@@ -1,6 +1,7 @@
 import { InvalidProviderResponseError, ProviderNotConfiguredError } from "../utils/errors.js";
 
 const API_BASE = "https://api.torbox.app/v1/api";
+const AUTO_AIRLOCK_TAG = "bitchord-auto-airlock";
 
 function requireToken(env) {
   if (!env?.TORBOX_API_TOKEN) {
@@ -80,6 +81,23 @@ export async function findTorrentByHash(env, hash) {
     (Array.isArray(item.alternative_hashes) &&
       item.alternative_hashes.some(value => String(value).toLowerCase() === hash))
   ) || null;
+}
+
+export async function markForAutomaticAirLock(env, torrent) {
+  const tags = Array.isArray(torrent.tags) ? torrent.tags : [];
+  if (tags.includes(AUTO_AIRLOCK_TAG)) return torrent;
+  const body = {
+    torrent_id: torrent.id,
+    name: typeof torrent.name === "string" ? torrent.name : "BitChord item",
+    tags: [...tags, AUTO_AIRLOCK_TAG],
+    alternative_hashes: Array.isArray(torrent.alternative_hashes) ? torrent.alternative_hashes : [],
+    airlocked: torrent.airlocked === true
+  };
+  await apiRequest(env, "/torrents/edittorrent", {
+    method: "PUT",
+    body: JSON.stringify(body)
+  });
+  return { ...torrent, tags: body.tags };
 }
 
 export async function ensureAirlocked(env, torrent) {
@@ -209,4 +227,31 @@ export async function getPlayableFile(env, torrentId, fileId) {
     throw new InvalidProviderResponseError("TorBox did not return a valid HTTPS download URL.");
   }
   return { ready: true, url: link, file: torrent.files.find(file => Number(file.id) === Number(fileId)) };
+}
+
+ 
+/**
+ * Cloudflare Cron calls this every five minutes. Only items explicitly tagged
+ * by this addon's submit/status flow are eligible, never the user's entire library.
+ */
+export async function airlockCompletedTorrents(env) {
+  const params = new URLSearchParams({ bypass_cache: "true", limit: "1000" });
+  const data = await apiRequest(env, "/torrents/mylist?" + params, { method: "GET" });
+  const items = Array.isArray(data) ? data : [];
+  let checked = 0;
+  let airlocked = 0;
+  const errors = [];
+
+  for (const item of items) {
+    if (!Array.isArray(item.tags) || !item.tags.includes(AUTO_AIRLOCK_TAG)) continue;
+    checked += 1;
+    if (!isReady(item) || item.airlocked === true) continue;
+    try {
+      await ensureAirlocked(env, item);
+      airlocked += 1;
+    } catch (error) {
+      errors.push({ torrentId: item.id, message: error?.message || "AirLock failed" });
+    }
+  }
+  return { checked, airlocked, errors };
 }
