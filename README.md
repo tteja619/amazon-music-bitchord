@@ -1,6 +1,6 @@
 # Amazon Music for BitChord
 
-**Status: backend scaffold deployed from source, Amazon provider not configured.** This repository does not currently search or play Amazon Music Unlimited.
+**Status: backend scaffold committed to GitHub, not yet deployed. Amazon provider not configured.** This repository does not currently search or play Amazon Music Unlimited.
 
 ## What is implemented
 
