@@ -10,8 +10,18 @@ import {
 
 const MANIFEST = {
   id: "in.tteja619.amazon-music-bitchord",
-  name: "TorBox Music (catalogue source required)",
-  version: "0.5.0",
+  name: "TorBox Music (personal library)",
+  version: "0.6.0",
+  settings: [{
+    key: "quality",
+    type: "select",
+    default: "lossless",
+    options: [
+      { label: "Lossless first", value: "lossless" },
+      { label: "High quality", value: "high" },
+      { label: "Low bandwidth", value: "low" }
+    ]
+  }],
   resources: ["search", "stream"],
   allowDownloads: 0,
   checkValidLossless: 0
@@ -96,16 +106,27 @@ export default {
 
   async fetch(request, env = {}) {
     const url = new URL(request.url);
+    let routePath = url.pathname;
+    let privateAddonRequest = false;
+    const configuredKey = env.ADDON_ACCESS_KEY;
+    if (configuredKey) {
+      const privateBase = `/a/${configuredKey}`;
+      if (routePath === privateBase || routePath.startsWith(privateBase + "/")) {
+        privateAddonRequest = true;
+        routePath = routePath.slice(privateBase.length) || "/";
+      }
+    }
+    if (routePath.startsWith("/a/") && !privateAddonRequest) return notFound();
 
     if (request.method !== "GET" && request.method !== "HEAD" && request.method !== "POST") {
       return json({ error: { code: "METHOD_NOT_ALLOWED" } }, 405);
     }
 
-    if (url.pathname === "/" || url.pathname === "/manifest.json") {
+    if (routePath === "/" || routePath === "/manifest.json") {
       return json(MANIFEST);
     }
 
-    if (url.pathname === "/health") {
+    if (routePath === "/health") {
       return json({
         status: "ok",
         addon: MANIFEST.id,
@@ -114,7 +135,7 @@ export default {
       });
     }
 
-    if (url.pathname === "/torbox/submit" && request.method === "POST") {
+    if (routePath === "/torbox/submit" && request.method === "POST") {
       const denied = requireAddonAccess(request, env);
       if (denied) return denied;
       try {
@@ -132,7 +153,7 @@ export default {
       }
     }
 
-    if (url.pathname === "/torbox/library" && request.method === "GET") {
+    if (routePath === "/torbox/library" && request.method === "GET") {
       const denied = requireAddonAccess(request, env);
       if (denied) return denied;
       const query = (url.searchParams.get("q") || "").trim();
@@ -144,7 +165,7 @@ export default {
       }
     }
 
-    if (url.pathname === "/torbox/play" && request.method === "GET") {
+    if (routePath === "/torbox/play" && request.method === "GET") {
       const denied = requireAddonAccess(request, env);
       if (denied) return denied;
       const trackId = url.searchParams.get("id") || "";
@@ -155,7 +176,7 @@ export default {
       }
     }
 
-    if (url.pathname === "/torbox/file" && request.method === "GET") {
+    if (routePath === "/torbox/file" && request.method === "GET") {
       const denied = requireAddonAccess(request, env);
       if (denied) return denied;
       try {
@@ -168,7 +189,7 @@ export default {
       }
     }
 
-    if (url.pathname === "/torbox/status" && request.method === "GET") {
+    if (routePath === "/torbox/status" && request.method === "GET") {
       const denied = requireAddonAccess(request, env);
       if (denied) return denied;
       const hash = (url.searchParams.get("hash") || "").toLowerCase();
@@ -180,9 +201,48 @@ export default {
       }
     }
 
+    if (routePath === "/search" && privateAddonRequest) {
+      const query = (url.searchParams.get("q") || "").trim();
+      if (!query) return badRequest("The q query parameter is required.");
+      if (query.length > 200) return badRequest("Search query must be 200 characters or fewer.");
+      try {
+        const result = await listAudioLibrary(env, query);
+        return json({ tracks: result.tracks });
+      } catch (error) {
+        return torboxError(error);
+      }
+    }
+
+    if (routePath.startsWith("/stream/") && privateAddonRequest) {
+      let trackId;
+      try {
+        trackId = decodeURIComponent(routePath.slice("/stream/".length));
+      } catch {
+        return badRequest("Invalid track id encoding.");
+      }
+      if (!trackId || trackId.length > 512) return badRequest("Invalid track id.");
+      try {
+        const stream = await resolveLibraryTrack(env, trackId);
+        if (!stream.ready) return json({ error: "Track is not ready." }, 404);
+        return json({
+          url: stream.url,
+          format: stream.format,
+          codec: stream.format,
+          container: stream.format,
+          manifest: "none",
+          encrypted: false,
+          ...(stream.audioQuality ? { quality: stream.audioQuality, audioQuality: stream.audioQuality } : {}),
+          ...(stream.sampleRate ? { sampleRate: stream.sampleRate } : {}),
+          ...(stream.bitDepth ? { bitDepth: stream.bitDepth } : {})
+        });
+      } catch (error) {
+        return torboxError(error);
+      }
+    }
+
     const provider = getProvider(env);
 
-    if (url.pathname === "/search") {
+    if (routePath === "/search") {
       const query = (url.searchParams.get("q") || "").trim();
       if (!query) return badRequest("The q query parameter is required.");
       if (query.length > 200) return badRequest("Search query must be 200 characters or fewer.");
@@ -195,10 +255,10 @@ export default {
       }
     }
 
-    if (url.pathname.startsWith("/stream/")) {
+    if (routePath.startsWith("/stream/")) {
       let trackId;
       try {
-        trackId = decodeURIComponent(url.pathname.slice("/stream/".length));
+        trackId = decodeURIComponent(routePath.slice("/stream/".length));
       } catch {
         return badRequest("Invalid track id encoding.");
       }
