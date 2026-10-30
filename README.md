@@ -1,73 +1,66 @@
 # Amazon Music for BitChord
 
-**Status: backend scaffold committed to GitHub, not yet deployed. Amazon provider not configured.** This repository does not currently search or play Amazon Music Unlimited.
+**Status: Phase 1 architecture implemented. Amazon provider remains disabled pending authorized API access.** This project does not currently search or play Amazon Music Unlimited.
 
-## What is implemented
+## Current implementation
 
-A Cloudflare Worker backend implementing BitChord's three routes:
+The Cloudflare Worker exposes:
 
-- `GET /` and `GET /manifest.json`: addon manifest
-- `GET /search?q=...`: validated BitChord search route
-- `GET /stream/{id}`: validated BitChord stream route
+- `GET /` and `GET /manifest.json`: BitChord addon manifest
 - `GET /health`: backend health and integration status
+- `GET /search?q=...`: validated catalogue search route
+- `GET /stream/{id}`: validated playback route
 
-The Amazon provider adapter is deliberately fail-closed. Until Amazon grants this app API access and supplies an approved API contract, search and stream return HTTP 503 with `AMAZON_MUSIC_API_NOT_CONFIGURED`. The Worker does not extract cookies, reuse private app tokens, scrape protected sessions, or bypass DRM.
+The backend is now separated into provider adapters, services, mapping, and shared errors:
+
+- `src/index.js`: HTTP routes and error-to-HTTP mapping
+- `src/providers/index.js`: provider selection
+- `src/providers/amazon-music.js`: Amazon adapter boundary, deliberately fail-closed
+- `src/providers/mock-provider.js`: development-only search fixture, not real Amazon data
+- `src/services/search-service.js`: catalogue search orchestration
+- `src/services/playback-service.js`: strict playback response validation
+- `src/mappers/track-mapper.js`: provider-neutral to BitChord track mapping
+- `src/utils/errors.js`: typed provider and playback errors
+- `test/track-mapper.test.js`: contract and safety tests
+
+## Development fixture
+
+The mock provider is selected only when BOTH Worker environment values are set:
+
+- `APP_ENV=development`
+- `MUSIC_PROVIDER=mock`
+
+In that configuration, `/search?q=...` returns a clearly labelled fixture track. It is not Amazon catalogue data. The mock provider does not provide audio playback.
+
+Do not enable these values in production. The default provider is always the fail-closed Amazon adapter.
+
+## Tests
+
+Requires Node.js 20 or later.
+
+```sh
+npm test
+```
+
+The tests cover track mapping, required metadata, development-only mock selection, and strict playback URL/encryption validation.
 
 ## Amazon API access
 
-Amazon's [official Music Developer Portal](https://developer.amazon.com/docs/music/landing_home) currently describes the Amazon Music Web API as closed beta. A working provider adapter requires Amazon to authorize this app and provide the applicable API documentation and credentials.
+Amazon's [official Music Developer Portal](https://developer.amazon.com/docs/music/landing_home) describes the Amazon Music Web API as closed beta. A working provider requires Amazon to authorize this application and provide its approved API contract.
 
-Do not put Amazon credentials in source files, GitHub commits, or the manifest. When an approved integration is available, use Cloudflare Worker secrets for credentials and implement the documented authorization and refresh flow in `src/providers/amazon-music.js`.
+Do not put Amazon credentials in source files, GitHub commits, or the manifest. Use Cloudflare Worker secrets for confidential credentials and implement only the documented authorization and refresh flow.
 
-## Deploy to Cloudflare Workers
+## Playback compatibility and safety
 
-1. Create or sign in to a Cloudflare account.
-2. Create an API token with permission to deploy Workers for the target account.
-3. In this GitHub repository, open **Settings → Secrets and variables → Actions**.
-4. Add repository secrets:
-   - `CLOUDFLARE_API_TOKEN`
-   - `CLOUDFLARE_ACCOUNT_ID`
-5. Open **Actions → Deploy BitChord Worker → Run workflow**, or push a change under `src/` to `main`.
-6. After deployment, Cloudflare will show a Worker URL similar to:
-   `https://amazon-music-bitchord.<your-workers-subdomain>.workers.dev`
+BitChord expects an absolute playable URL. This adapter accepts a stream only when the provider explicitly reports `encrypted: false`. Protected or encrypted streams are rejected. Do not extract private app tokens, reuse session cookies, scrape protected playback sessions, proxy protected streams, or bypass DRM.
 
-The exact hostname depends on your Cloudflare account. Do not guess it.
+Catalogue search and playback are separate capabilities. Authorization for catalogue access must not be assumed to include playback permission.
 
-## Install in BitChord
+## Deployment
 
-Add the **Worker root URL** shown by Cloudflare as the addon URL. BitChord will request `/manifest.json` from that root and then call `/search` and `/stream/{id}`.
+The existing GitHub Actions workflow deploys changes under `src/**` to Cloudflare Workers. Repository secrets:
 
-The GitHub raw URL for `manifest.json` is only a static JSON file. It is not the install URL for the full backend.
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
 
-## Verify after deployment
-
-Open these URLs, replacing the hostname with the actual Worker URL:
-
-- `/health`: should report `status: "ok"` and `integration: "awaiting-authorized-api-access"`
-- `/manifest.json`: should return the addon manifest
-- `/search?q=test`: should return HTTP 503 until the authorized provider adapter is implemented
-
-## BitChord response requirements
-
-The [BitChord addon protocol](https://bitchord.kushagrasingh.in/docs) expects search results as `{ "tracks": [...] }`. Track rows require `id` and `title`. Stream responses require an absolute playable `url`; codec, container, manifest type, encryption state, sample rate, and bit depth should be supplied accurately when known. Protected/encrypted streams are not supported.
-
-## Repository layout
-
-- `src/index.js`: Worker HTTP routes and response validation
-- `src/providers/amazon-music.js`: provider adapter boundary, currently disabled
-- `wrangler.toml`: Cloudflare Worker configuration
-- `.github/workflows/deploy-worker.yml`: GitHub Actions deployment
-- `manifest.json`: static copy of the addon manifest for inspection
-
-## Current checklist
-
-- [x] BitChord-compatible Worker route scaffold
-- [x] Manifest served dynamically by Worker
-- [x] Fail-closed handling when provider is not configured
-- [x] Stream URL and encrypted-stream response checks
-- [x] GitHub Actions deployment workflow
-- [ ] Cloudflare account secrets configured
-- [ ] Worker deployed and hostname verified
-- [ ] Amazon grants API access
-- [ ] Official Amazon API adapter implemented
-- [ ] End-to-end search and playback test
+The Worker root URL is the BitChord installation URL. The static GitHub raw manifest URL is not a replacement for the Worker backend.
