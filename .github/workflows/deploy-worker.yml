@@ -6,11 +6,26 @@ on:
     branches: [main]
     paths:
       - "src/**"
+      - "test/**"
+      - "package.json"
       - "wrangler.toml"
       - ".github/workflows/deploy-worker.yml"
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run contract tests
+        run: npm test
+
   deploy:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
