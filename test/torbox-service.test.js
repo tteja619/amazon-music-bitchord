@@ -189,6 +189,9 @@ test("scheduled sweep AirLocks only completed items tagged by this addon", async
         airlocked: true, tags: ["bitchord-auto-airlock"]
       } });
     }
+    if (parsed.pathname.endsWith("/torrents/mylist") && parsed.searchParams.get("id") === "61") {
+      return Response.json({ success: true, data: { id: 61, airlocked: true } });
+    }
     throw new Error("Unexpected request: " + url);
   };
   try {
