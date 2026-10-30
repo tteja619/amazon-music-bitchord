@@ -32,6 +32,11 @@ export function toBitChordTrack(record) {
     if (value) track[field] = value;
   }
 
+  for (const field of ["sampleRate", "bitDepth", "bitrate"]) {
+    const value = positiveNumber(record[field]);
+    if (value !== undefined) track[field] = value;
+  }
+
   const duration = positiveNumber(record.duration);
   if (duration !== undefined) track.duration = duration;
 
