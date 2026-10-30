@@ -53,7 +53,7 @@ curl "https://YOUR-WORKER.workers.dev/torbox/status?hash=YOUR_40_CHARACTER_HEX_H
   -H "authorization: Bearer YOUR_ADDON_ACCESS_KEY"
 ```
 
-Call this again while the item is downloading. When TorBox reports completion, the route enables and verifies AirLock automatically.
+The Cloudflare Cron Trigger also checks tagged items every five minutes, so AirLock does not depend on you reopening the status endpoint.
 
 ### Resolve a file link
 
