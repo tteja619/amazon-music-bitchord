@@ -106,12 +106,16 @@ export async function ensureAirlocked(env, torrent) {
  */
 export async function submitMagnet(env, magnet, name) {
   const hash = extractInfoHash(magnet);
-  const cachedEntry = await checkCached(env, hash);
+  // Reuse an item already in this account rather than submitting a duplicate.
+  let torrent = await findTorrentByHash(env, hash);
+  let cachedEntry = null;
+  if (!torrent) {
+    cachedEntry = await checkCached(env, hash);
 
-  // TorBox's create endpoint attaches the item to this account. Cache status is
-  // checked first so the UI can distinguish instant cached imports from downloads.
-  await addMagnet(env, magnet, name);
-  const torrent = await findTorrentByHash(env, hash);
+    // TorBox's create endpoint attaches the item to this account.
+    await addMagnet(env, magnet, name);
+    torrent = await findTorrentByHash(env, hash);
+  }
 
   if (!torrent) {
     return {
