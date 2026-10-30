@@ -271,29 +271,22 @@ const AUDIO_EXTENSIONS = new Set(["flac", "mp3", "m4a", "aac", "alac", "wav", "a
 const LOSSLESS_FORMATS = new Set(["flac", "alac", "wav", "aiff", "aif"]);
 
 function audioProfile(filename, torrentName = "") {
-  const text = `${filename || ""} ${torrentName || ""}`.toLowerCase();
+  const text = String(filename || "") + " " + String(torrentName || "");
+  const normalized = text.toLowerCase();
   const ext = audioExtension(filename);
-  const explicitAlac = /\\balac\\b/.test(text);
+  const explicitAlac = /\balac\b/.test(normalized);
   const lossless = LOSSLESS_FORMATS.has(ext) || (ext === "m4a" && explicitAlac);
-  const depthMatch = text.match(/(?:24|32|16|8)\\s*[- ]?bit/);
-  const rateMatch = text.match(/(\d{2,3}(?:\.\d+)?)\\s*k(?:hz)?/);
-  const bitDepth = depthMatch ? Number(depthMatch[0].match(/\\d+/)[0]) : undefined;
+  const depthMatch = normalized.match(/(?:24|32|16|8)\s*[- ]?bit/);
+  const rateMatch = normalized.match(/(\d{2,3}(?:\.\d+)?)\s*k(?:hz)?/);
+  const bitDepth = depthMatch ? Number(depthMatch[0].match(/\d+/)[0]) : undefined;
   const sampleRate = rateMatch ? Math.round(Number(rateMatch[1]) * 1000) : undefined;
-  const bitrateMatch = text.match(/(\\d{2,4})\\s*kbps/);
+  const bitrateMatch = normalized.match(/(\d{2,4})\s*kbps/);
   const bitrate = bitrateMatch ? Number(bitrateMatch[1]) : undefined;
   let audioQuality;
   if (lossless) audioQuality = "LOSSLESS";
   else if (bitrate !== undefined) audioQuality = bitrate >= 256 ? "HIGH" : "LOW";
-  return {
-    format: ext,
-    lossless,
-    audioQuality,
-    bitDepth,
-    sampleRate,
-    bitrate
-  };
+  return { format: ext, lossless, audioQuality, bitDepth, sampleRate, bitrate };
 }
-
 function qualityScore(track) {
   const lossless = track.audioQuality === "LOSSLESS" ? 1 : 0;
   const depth = Number(track.bitDepth) || 0;
