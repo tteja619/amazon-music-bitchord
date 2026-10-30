@@ -82,7 +82,12 @@ export default {
     }
 
     if (url.pathname.startsWith("/stream/")) {
-      const trackId = decodeURIComponent(url.pathname.slice("/stream/".length));
+      let trackId;
+      try {
+        trackId = decodeURIComponent(url.pathname.slice("/stream/".length));
+      } catch {
+        return badRequest("Invalid track id encoding.");
+      }
       if (!trackId || trackId.length > 512) return badRequest("Invalid track id.");
 
       try {
