@@ -12,11 +12,12 @@ function requireToken(env) {
 
 async function apiRequest(env, path, options = {}) {
   const token = requireToken(env);
+  const isForm = typeof FormData !== "undefined" && options.body instanceof FormData;
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       authorization: `Bearer ${token}`,
-      ...(options.body instanceof FormData ? {} : { "content-type": "application/json" }),
+      ...(isForm ? {} : { "content-type": "application/json" }),
       ...options.headers
     }
   });
@@ -83,52 +84,16 @@ export async function findTorrentByHash(env, hash) {
   ) || null;
 }
 
-export async function markForAutomaticAirLock(env, torrent) {
-  const tags = Array.isArray(torrent.tags) ? torrent.tags : [];
-  if (tags.includes(AUTO_AIRLOCK_TAG)) return torrent;
-  const body = {
-    torrent_id: torrent.id,
-    name: typeof torrent.name === "string" ? torrent.name : "BitChord item",
-    tags: [...tags, AUTO_AIRLOCK_TAG],
-    alternative_hashes: Array.isArray(torrent.alternative_hashes) ? torrent.alternative_hashes : [],
-    airlocked: torrent.airlocked === true
-  };
-  await apiRequest(env, "/torrents/edittorrent", {
-    method: "PUT",
-    body: JSON.stringify(body)
-  });
-  return { ...torrent, tags: body.tags };
-}
-
-export async function ensureAirlocked(env, torrent) {
-  if (torrent.airlocked === true) return { airlocked: true, changed: false };
-
-  await apiRequest(env, "/torrents/edittorrent", {
-    method: "PUT",
-    body: JSON.stringify({
-      torrent_id: torrent.id,
-      name: typeof torrent.name === "string" ? torrent.name : "BitChord item",
-      tags: Array.isArray(torrent.tags) ? torrent.tags : [],
-      alternative_hashes: Array.isArray(torrent.alternative_hashes) ? torrent.alternative_hashes : [],
-      airlocked: true
-    })
-  });
-
-  const verified = await getTorrent(env, torrent.id);
-  if (verified.airlocked !== true) {
-    throw new InvalidProviderResponseError("TorBox did not confirm airlocked=true after the edit request.");
-  }
-  return { airlocked: true, changed: true };
-}
-
 function isReady(torrent) {
-  return torrent.download_finished === true || torrent.cached === true || torrent.download_state === "cached";
+  return torrent.download_finished === true ||
+    torrent.cached === true ||
+    torrent.download_state === "cached";
 }
 
 async function updateTorrent(env, torrent, changes = {}) {
   const payload = {
     torrent_id: torrent.id,
-    name: torrent.name,
+    name: typeof torrent.name === "string" ? torrent.name : "BitChord item",
     tags: Array.isArray(torrent.tags) ? torrent.tags : [],
     alternative_hashes: Array.isArray(torrent.alternative_hashes) ? torrent.alternative_hashes : [],
     airlocked: torrent.airlocked === true,
@@ -148,20 +113,13 @@ async function markForAutoAirlock(env, torrent) {
   return updateTorrent(env, torrent, { tags: [...tags, AUTO_AIRLOCK_TAG] });
 }
 
-export async function airlockPendingTorrents(env) {
-  const params = new URLSearchParams({ bypass_cache: "true", limit: "1000" });
-  const data = await apiRequest(env, `/torrents/mylist?${params}`, { method: "GET" });
-  const items = Array.isArray(data) ? data : [];
-  const pending = items.filter(item =>
-    Array.isArray(item.tags) && item.tags.includes(AUTO_AIRLOCK_TAG) &&
-    item.airlocked !== true && isReady(item)
-  );
-  const results = [];
-  for (const torrent of pending) {
-    const verified = await ensureAirlocked(env, torrent);
-    results.push({ torrentId: torrent.id, airlocked: verified.airlocked });
+export async function ensureAirlocked(env, torrent) {
+  if (torrent.airlocked === true) return { airlocked: true, changed: false };
+  const verified = await updateTorrent(env, torrent, { airlocked: true });
+  if (verified.airlocked !== true) {
+    throw new InvalidProviderResponseError("TorBox did not confirm airlocked=true after the edit request.");
   }
-  return results;
+  return { airlocked: true, changed: true };
 }
 
 /**
@@ -195,11 +153,13 @@ export async function submitMagnet(env, magnet, name) {
   }
 
   torrent = await markForAutoAirlock(env, torrent);
+  const cached = Boolean(cachedEntry) || torrent.cached === true ||
+    torrent.download_state === "cached";
 
   if (!isReady(torrent)) {
     return {
       hash,
-      cached: Boolean(cachedEntry) || torrent.cached === true,
+      cached,
       status: torrent.download_state || "downloading",
       torrentId: torrent.id,
       airlocked: torrent.airlocked === true
@@ -209,7 +169,7 @@ export async function submitMagnet(env, magnet, name) {
   const airlock = await ensureAirlocked(env, torrent);
   return {
     hash,
-    cached: Boolean(cachedEntry) || torrent.cached === true,
+    cached,
     status: "ready",
     torrentId: torrent.id,
     airlocked: airlock.airlocked
@@ -217,10 +177,10 @@ export async function submitMagnet(env, magnet, name) {
 }
 
 export async function getStatusAndAirlock(env, hash) {
-  if (!/^[a-f0-9]{40}$/.test(String(hash).toLowerCase())) {
+  const normalizedHash = String(hash || "").toLowerCase();
+  if (!/^[a-f0-9]{40}$/.test(normalizedHash)) {
     throw new TypeError("A 40-character hexadecimal torrent info hash is required.");
   }
-  const normalizedHash = String(hash).toLowerCase();
   const torrent = await findTorrentByHash(env, normalizedHash);
   if (!torrent) return { hash: normalizedHash, status: "not_found", airlocked: false };
 
@@ -244,8 +204,7 @@ export async function getStatusAndAirlock(env, hash) {
 
 /**
  * Generate a short-lived TorBox CDN URL for a file belonging to the user's
- * own torrent. TorBox documents this URL as valid for starting a download for
- * a limited period, so callers should request it immediately before playback.
+ * own torrent. Request it immediately before playback, not as a permanent URL.
  */
 export async function getPlayableFile(env, torrentId, fileId) {
   if (!Number.isInteger(Number(torrentId)) || Number(torrentId) <= 0 ||
@@ -273,17 +232,20 @@ export async function getPlayableFile(env, torrentId, fileId) {
   if (typeof link !== "string" || !/^https:\/\//i.test(link)) {
     throw new InvalidProviderResponseError("TorBox did not return a valid HTTPS download URL.");
   }
-  return { ready: true, url: link, file: torrent.files.find(file => Number(file.id) === Number(fileId)) };
+  return {
+    ready: true,
+    url: link,
+    file: torrent.files.find(file => Number(file.id) === Number(fileId))
+  };
 }
 
- 
 /**
- * Cloudflare Cron calls this every five minutes. Only items explicitly tagged
- * by this addon's submit/status flow are eligible, never the user's entire library.
+ * Cron scans only torrents tagged by this addon's submission flow. It never
+ * AirLocks unrelated items in the user's TorBox library.
  */
 export async function airlockCompletedTorrents(env) {
   const params = new URLSearchParams({ bypass_cache: "true", limit: "1000" });
-  const data = await apiRequest(env, "/torrents/mylist?" + params, { method: "GET" });
+  const data = await apiRequest(env, `/torrents/mylist?${params}`, { method: "GET" });
   const items = Array.isArray(data) ? data : [];
   let checked = 0;
   let airlocked = 0;
