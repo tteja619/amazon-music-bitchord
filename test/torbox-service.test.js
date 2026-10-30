@@ -275,3 +275,26 @@ test("rejects malformed library track IDs", async () => {
     /numeric torrent and file IDs/
   );
 });
+
+
+test("ranks detected hi-res lossless files ahead of CD lossless and lossy fallbacks", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ success: true, data: [
+    { id: 91, name: "Album MP3 320kbps", download_finished: true,
+      files: [{ id: 1, name: "Song.mp3", size: 1000 }] },
+    { id: 92, name: "Album FLAC 16bit-44.1kHz", download_finished: true,
+      files: [{ id: 2, name: "Song.flac", size: 2000 }] },
+    { id: 93, name: "Album FLAC 24bit-96kHz", download_finished: true,
+      files: [{ id: 3, name: "Song.flac", size: 3000 }] }
+  ] });
+  try {
+    const result = await listAudioLibrary({ TORBOX_API_TOKEN: "test-token" }, "song");
+    assert.deepEqual(result.tracks.map(track => track.id), ["93:3", "92:2", "91:1"]);
+    assert.equal(result.tracks[0].audioQuality, "LOSSLESS");
+    assert.equal(result.tracks[0].bitDepth, 24);
+    assert.equal(result.tracks[0].sampleRate, 96000);
+    assert.equal(result.tracks[2].audioQuality, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
