@@ -1,9 +1,7 @@
 {
   "id": "in.tteja619.amazon-music-bitchord",
-  "name": "Amazon Music (authorization required)",
-  "version": "0.1.0",
-  "description": "Integration scaffold only. Amazon Music Unlimited search and protected playback are not implemented.",
-  "author": "tteja619",
+  "name": "Amazon Music (API access required)",
+  "version": "0.2.0",
   "resources": [
     "search",
     "stream"
