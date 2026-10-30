@@ -1,7 +1,7 @@
 import { getProvider } from "./providers/index.js";
 import { searchCatalog } from "./services/search-service.js";
 import { resolvePlayback } from "./services/playback-service.js";
-import { submitMagnet, getStatusAndAirlock, getPlayableFile, airlockCompletedTorrents } from "./services/torbox-service.js";
+import { submitMagnet, getStatusAndAirlock, getPlayableFile, airlockCompletedTorrents, listAudioLibrary, resolveLibraryTrack } from "./services/torbox-service.js";
 import {
   ProviderNotConfiguredError,
   InvalidProviderResponseError,
@@ -127,6 +127,29 @@ export default {
         }
         const result = await submitMagnet(env, body.magnet, body.name);
         return json(result, 202);
+      } catch (error) {
+        return torboxError(error);
+      }
+    }
+
+    if (url.pathname === "/torbox/library" && request.method === "GET") {
+      const denied = requireAddonAccess(request, env);
+      if (denied) return denied;
+      const query = (url.searchParams.get("q") || "").trim();
+      if (query.length > 200) return badRequest("Search query must be 200 characters or fewer.");
+      try {
+        return json(await listAudioLibrary(env, query));
+      } catch (error) {
+        return torboxError(error);
+      }
+    }
+
+    if (url.pathname === "/torbox/play" && request.method === "GET") {
+      const denied = requireAddonAccess(request, env);
+      if (denied) return denied;
+      const trackId = url.searchParams.get("id") || "";
+      try {
+        return json(await resolveLibraryTrack(env, trackId));
       } catch (error) {
         return torboxError(error);
       }
