@@ -1,5 +1,7 @@
 # TorBox Music for BitChord
 
+**Version 0.6.0:** private path-authenticated BitChord endpoints now expose your TorBox library, rank available lossless files first, and resolve short-lived playback URLs.
+
 **Status: TorBox cache/download/AirLock and file-link backend implemented. A music catalogue source and final BitChord playback integration are still required.** Searchable music results are not available yet.
 
 ## Worker routes
@@ -12,7 +14,8 @@
 - `GET /torbox/library?q=...`: search audio files in the authenticated TorBox library
 - `GET /torbox/play?id={torrent_id}:{file_id}`: resolve a library track to a fresh playback URL
 - `GET /search?q=...`: catalogue route, not yet connected to a music catalogue
-- `GET /stream/{id}`: playback route, not yet connected to a music catalogue or TorBox file resolution
+- `GET /stream/{id}`: legacy public route; use the private addon URL below for TorBox-backed playback
+- `GET /a/{ADDON_ACCESS_KEY}/manifest.json`, `/search`, and `/stream/{id}`: private BitChord-compatible endpoints
 
 ## Automatic cache and AirLock workflow
 
@@ -88,7 +91,7 @@ The endpoint verifies that the requested file belongs to the specified torrent a
 
 - This implementation accepts a magnet supplied by the caller. It does not search the internet for music torrents.
 - A separate catalogue/index provider is required to search for releases and return magnet links.
-- The private TorBox library and playback routes now map completed audio files to TorBox file IDs. They require the addon's Bearer access key. The public BitChord `/search` and `/stream/{id}` routes are not connected yet because BitChord's ability to attach a private Bearer header must be confirmed before exposing a personal library.
+- BitChord cannot attach a private Bearer header in its documented addon protocol. Version 0.6.0 therefore supports a private path-prefixed installation URL: `https://YOUR-WORKER.workers.dev/a/YOUR_ADDON_ACCESS_KEY`. Add that URL in BitChord. Its manifest, search, and stream routes are protected by the path key. Keep this URL private; rotate `ADDON_ACCESS_KEY` in Cloudflare to revoke it. The public root endpoints remain non-personal and do not expose your library.
 - TorBox's torrent API downloads all files in a torrent. Check the release contents and size before submitting it.
 - Use only torrents and files you own, are licensed to download, or are otherwise legally permitted to access and store. AirLock does not grant copyright permission.
 - AirLock availability and storage are subject to the user's TorBox plan and quota.
@@ -111,3 +114,20 @@ GitHub Actions runs tests before deploying the Cloudflare Worker. Repository sec
 - `CLOUDFLARE_ACCOUNT_ID`
 
 The TorBox API token and addon access key are separate Cloudflare Worker secrets: `TORBOX_API_TOKEN` and `ADDON_ACCESS_KEY`. The Worker root URL remains the BitChord installation URL.
+
+
+## Private BitChord installation and quality priority
+
+Use this URL in BitChord, substituting the secret already configured in Cloudflare (do not paste it into chat or GitHub):
+
+```text
+https://YOUR-WORKER.workers.dev/a/YOUR_ADDON_ACCESS_KEY
+```
+
+The private URL serves `manifest.json`, `search`, and `stream/{id}` without requiring custom headers. Search ranks matching library files in this order:
+
+1. Lossless FLAC, ALAC, WAV, and AIFF first.
+2. Among lossless files, detected bit depth and sample rate are ranked highest first (for example, 24-bit/96 kHz before 16-bit/44.1 kHz).
+3. If no lossless copy exists, detected high-bitrate lossy files follow, then lower-bitrate lossy files.
+
+Quality metadata is only emitted when it can be inferred from the actual file extension or explicit filename/torrent labels. Filename labels such as 24-bit/96 kHz are not an independent technical verification of the encoded audio. The stream endpoint resolves the exact selected file to a fresh TorBox URL. BitChord's `quality` request parameter is accepted; search results remain ordered best-first so the client can fall back to the next available copy.
