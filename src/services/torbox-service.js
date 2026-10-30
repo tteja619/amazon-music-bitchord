@@ -264,3 +264,64 @@ export async function airlockCompletedTorrents(env) {
   }
   return { checked, airlocked, errors };
 }
+
+
+const AUDIO_EXTENSIONS = new Set(["flac", "mp3", "m4a", "aac", "alac", "wav", "aiff", "aif", "opus", "ogg", "oga", "wma"]);
+
+function audioExtension(filename) {
+  const match = /\.([a-z0-9]+)$/i.exec(String(filename || ""));
+  const extension = match?.[1]?.toLowerCase();
+  return extension && AUDIO_EXTENSIONS.has(extension) ? extension : null;
+}
+
+function displayTitle(filename) {
+  const base = String(filename || "").split("/").pop() || "Unknown track";
+  return base.replace(/\.[^.]+$/, "").replace(/[_]+/g, " ").trim() || "Unknown track";
+}
+
+/** Returns audio files from the authenticated user's completed TorBox torrents. */
+export async function listAudioLibrary(env, query = "") {
+  const params = new URLSearchParams({ bypass_cache: "true", limit: "1000" });
+  const data = await apiRequest(env, "/torrents/mylist?" + params, { method: "GET" });
+  const torrents = Array.isArray(data) ? data : [];
+  const needle = String(query || "").trim().toLocaleLowerCase();
+  const tracks = [];
+
+  for (const torrent of torrents) {
+    if (!isReady(torrent) || !Array.isArray(torrent.files)) continue;
+    for (const file of torrent.files) {
+      const extension = audioExtension(file.name);
+      if (!extension) continue;
+      const title = displayTitle(file.name);
+      const haystack = [title, torrent.name, file.name].filter(Boolean).join(" ").toLocaleLowerCase();
+      if (needle && !haystack.includes(needle)) continue;
+      if (file.id === undefined || file.id === null) continue;
+      tracks.push({
+        id: String(torrent.id) + ":" + String(file.id),
+        title,
+        album: typeof torrent.name === "string" ? torrent.name : undefined,
+        format: extension,
+        torrentId: torrent.id,
+        fileId: file.id,
+        size: typeof file.size === "number" ? file.size : undefined
+      });
+    }
+  }
+  return { tracks, total: tracks.length };
+}
+
+export async function resolveLibraryTrack(env, trackId) {
+  const match = /^(\d+):(\d+)$/.exec(String(trackId || ""));
+  if (!match) throw new TypeError("Track ID must contain numeric torrent and file IDs.");
+  const torrentId = Number(match[1]);
+  const fileId = Number(match[2]);
+  const result = await getPlayableFile(env, torrentId, fileId);
+  if (!result.ready) return result;
+  return {
+    ready: true,
+    url: result.url,
+    title: displayTitle(result.file.name),
+    format: audioExtension(result.file.name) || undefined,
+    size: typeof result.file.size === "number" ? result.file.size : undefined
+  };
+}
