@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   extractInfoHash, submitMagnet, getStatusAndAirlock, getPlayableFile,
-  airlockCompletedTorrents
+  airlockCompletedTorrents, listAudioLibrary, resolveLibraryTrack
 } from "../src/services/torbox-service.js";
 
 const HASH = "0123456789abcdef0123456789abcdef01234567";
