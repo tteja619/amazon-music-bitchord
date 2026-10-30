@@ -1,0 +1,11 @@
+{
+  "name": "amazon-music-bitchord",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
