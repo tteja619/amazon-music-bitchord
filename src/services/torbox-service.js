@@ -120,7 +120,7 @@ export async function submitMagnet(env, magnet, name) {
   if (!torrent) {
     return {
       hash,
-      cached: Boolean(cachedEntry),
+      cached: Boolean(cachedEntry) || torrent.cached === true,
       status: cachedEntry ? "cached_added_pending_account_sync" : "submitted_pending_account_sync",
       torrentId: null,
       airlocked: false
@@ -131,7 +131,7 @@ export async function submitMagnet(env, magnet, name) {
   if (!ready) {
     return {
       hash,
-      cached: Boolean(cachedEntry),
+      cached: Boolean(cachedEntry) || torrent.cached === true,
       status: "downloading",
       torrentId: torrent.id,
       airlocked: false
@@ -141,7 +141,7 @@ export async function submitMagnet(env, magnet, name) {
   const airlock = await ensureAirlocked(env, torrent);
   return {
     hash,
-    cached: Boolean(cachedEntry),
+    cached: Boolean(cachedEntry) || torrent.cached === true,
     status: "ready",
     torrentId: torrent.id,
     airlocked: airlock.airlocked
