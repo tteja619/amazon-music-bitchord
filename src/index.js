@@ -76,7 +76,7 @@ export default {
   async fetch(request, env = {}) {
     const url = new URL(request.url);
 
-    if (request.method !== "GET" && request.method !== "HEAD") {
+    if (request.method !== "GET" && request.method !== "HEAD" && request.method !== "POST") {
       return json({ error: { code: "METHOD_NOT_ALLOWED" } }, 405);
     }
 
@@ -88,8 +88,8 @@ export default {
       return json({
         status: "ok",
         addon: MANIFEST.id,
-        provider: "amazon-music",
-        integration: "awaiting-authorized-api-access"
+        provider: "torbox",
+        integration: env.TORBOX_API_TOKEN ? "torbox-api-configured" : "awaiting-torbox-api-token"
       });
     }
 
