@@ -26,7 +26,6 @@ async function apiRequest(env, path, options = {}) {
   } catch {
     throw new InvalidProviderResponseError("TorBox returned a non-JSON response.");
   }
-
   if (!response.ok || payload?.success !== true) {
     const error = new Error(payload?.detail || `TorBox request failed with HTTP ${response.status}.`);
     error.code = payload?.error || "TORBOX_API_ERROR";
@@ -66,7 +65,7 @@ export async function getTorrent(env, torrentId) {
   const params = new URLSearchParams({ id: String(torrentId), bypass_cache: "true" });
   const data = await apiRequest(env, `/torrents/mylist?${params}`, { method: "GET" });
   const item = Array.isArray(data) ? data[0] : data;
-  if (!item || typeof item.id !== "number") {
+  if (!item || Number(item.id) !== Number(torrentId)) {
     throw new InvalidProviderResponseError("TorBox did not return the requested torrent.");
   }
   return item;
@@ -84,9 +83,7 @@ export async function findTorrentByHash(env, hash) {
 }
 
 export async function ensureAirlocked(env, torrent) {
-  if (torrent.airlocked === true) {
-    return { airlocked: true, changed: false };
-  }
+  if (torrent.airlocked === true) return { airlocked: true, changed: false };
 
   await apiRequest(env, "/torrents/edittorrent", {
     method: "PUT",
@@ -95,46 +92,52 @@ export async function ensureAirlocked(env, torrent) {
 
   const verified = await getTorrent(env, torrent.id);
   if (verified.airlocked !== true) {
-    throw new InvalidProviderResponseError("TorBox accepted the AirLock request but did not confirm airlocked=true.");
+    throw new InvalidProviderResponseError("TorBox did not confirm airlocked=true after the edit request.");
   }
   return { airlocked: true, changed: true };
 }
 
+function isReady(torrent) {
+  return torrent.download_finished === true || torrent.download_state === "cached";
+}
+
 /**
  * Adds a user-supplied magnet to the authenticated TorBox account.
- * The caller must ensure the user has rights to download and store the content.
+ * The caller must have the rights to download and store the content.
  */
 export async function submitMagnet(env, magnet, name) {
   const hash = extractInfoHash(magnet);
-  // Reuse an item already in this account rather than submitting a duplicate.
   let torrent = await findTorrentByHash(env, hash);
   let cachedEntry = null;
+
   if (!torrent) {
     cachedEntry = await checkCached(env, hash);
-
-    // TorBox's create endpoint attaches the item to this account.
-    await addMagnet(env, magnet, name);
-    torrent = await findTorrentByHash(env, hash);
+    const created = await addMagnet(env, magnet, name);
+    const torrentId = created?.torrent_id ?? created?.id;
+    if (Number.isInteger(Number(torrentId)) && Number(torrentId) > 0) {
+      torrent = await getTorrent(env, Number(torrentId));
+    } else {
+      torrent = await findTorrentByHash(env, hash);
+    }
   }
 
   if (!torrent) {
     return {
       hash,
-      cached: Boolean(cachedEntry) || torrent.cached === true,
+      cached: Boolean(cachedEntry),
       status: cachedEntry ? "cached_added_pending_account_sync" : "submitted_pending_account_sync",
       torrentId: null,
       airlocked: false
     };
   }
 
-  const ready = torrent.download_finished === true || torrent.cached === true;
-  if (!ready) {
+  if (!isReady(torrent)) {
     return {
       hash,
       cached: Boolean(cachedEntry) || torrent.cached === true,
-      status: "downloading",
+      status: torrent.download_state || "downloading",
       torrentId: torrent.id,
-      airlocked: false
+      airlocked: torrent.airlocked === true
     };
   }
 
@@ -152,13 +155,13 @@ export async function getStatusAndAirlock(env, hash) {
   if (!/^[a-f0-9]{40}$/.test(String(hash).toLowerCase())) {
     throw new TypeError("A 40-character hexadecimal torrent info hash is required.");
   }
-  const torrent = await findTorrentByHash(env, String(hash).toLowerCase());
-  if (!torrent) return { hash, status: "not_found", airlocked: false };
+  const normalizedHash = String(hash).toLowerCase();
+  const torrent = await findTorrentByHash(env, normalizedHash);
+  if (!torrent) return { hash: normalizedHash, status: "not_found", airlocked: false };
 
-  const ready = torrent.download_finished === true || torrent.cached === true;
-  if (!ready) {
+  if (!isReady(torrent)) {
     return {
-      hash,
+      hash: normalizedHash,
       torrentId: torrent.id,
       status: torrent.download_state || "downloading",
       airlocked: torrent.airlocked === true
@@ -167,9 +170,43 @@ export async function getStatusAndAirlock(env, hash) {
 
   const airlock = await ensureAirlocked(env, torrent);
   return {
-    hash,
+    hash: normalizedHash,
     torrentId: torrent.id,
     status: "ready",
     airlocked: airlock.airlocked
   };
+}
+
+/**
+ * Generate a short-lived TorBox CDN URL for a file belonging to the user's
+ * own torrent. TorBox documents this URL as valid for starting a download for
+ * a limited period, so callers should request it immediately before playback.
+ */
+export async function getPlayableFile(env, torrentId, fileId) {
+  if (!Number.isInteger(Number(torrentId)) || Number(torrentId) <= 0 ||
+      !Number.isInteger(Number(fileId)) || Number(fileId) < 0) {
+    throw new TypeError("Valid numeric torrent_id and file_id are required.");
+  }
+
+  const torrent = await getTorrent(env, Number(torrentId));
+  if (!isReady(torrent)) {
+    return { status: torrent.download_state || "downloading", ready: false };
+  }
+  if (!Array.isArray(torrent.files) ||
+      !torrent.files.some(file => Number(file.id) === Number(fileId))) {
+    throw new TypeError("The requested file does not belong to this TorBox torrent.");
+  }
+
+  const params = new URLSearchParams({
+    token: requireToken(env),
+    torrent_id: String(torrentId),
+    file_id: String(fileId),
+    redirect: "false",
+    append_name: "true"
+  });
+  const link = await apiRequest(env, `/torrents/requestdl?${params}`, { method: "GET" });
+  if (typeof link !== "string" || !/^https:\/\//i.test(link)) {
+    throw new InvalidProviderResponseError("TorBox did not return a valid HTTPS download URL.");
+  }
+  return { ready: true, url: link, file: torrent.files.find(file => Number(file.id) === Number(fileId)) };
 }
