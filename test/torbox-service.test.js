@@ -36,7 +36,7 @@ test("automatically AirLocks a cached torrent after adding it to the account", a
     if (parsed.pathname.endsWith("/torrents/mylist") && parsed.searchParams.get("id") === "42") {
       return Response.json({ success: true, data: {
         id: 42, hash: HASH, name: "Test Album", cached: true, download_finished: true,
-        tags: ["bitchord-auto-airlock"], airlocked: edits.some(edit => edit.airlocked === true)
+        tags: edits.some(edit => Array.isArray(edit.tags) && edit.tags.includes("bitchord-auto-airlock")) ? ["bitchord-auto-airlock"] : [], airlocked: edits.some(edit => edit.airlocked === true)
       } });
     }
     throw new Error("Unexpected request: " + url);
