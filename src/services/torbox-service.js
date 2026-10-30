@@ -105,7 +105,13 @@ export async function ensureAirlocked(env, torrent) {
 
   await apiRequest(env, "/torrents/edittorrent", {
     method: "PUT",
-    body: JSON.stringify({ torrent_id: torrent.id, airlocked: true })
+    body: JSON.stringify({
+      torrent_id: torrent.id,
+      name: typeof torrent.name === "string" ? torrent.name : "BitChord item",
+      tags: Array.isArray(torrent.tags) ? torrent.tags : [],
+      alternative_hashes: Array.isArray(torrent.alternative_hashes) ? torrent.alternative_hashes : [],
+      airlocked: true
+    })
   });
 
   const verified = await getTorrent(env, torrent.id);
