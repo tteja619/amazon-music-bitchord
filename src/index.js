@@ -11,7 +11,7 @@ import {
 const MANIFEST = {
   id: "in.tteja619.amazon-music-bitchord",
   name: "TorBox Music (catalogue source required)",
-  version: "0.4.0",
+  version: "0.5.0",
   resources: ["search", "stream"],
   allowDownloads: 0,
   checkValidLossless: 0
