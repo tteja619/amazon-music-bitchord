@@ -13,13 +13,13 @@ test("maps required and optional BitChord track fields", () => {
     artist: "Artist",
     bitDepth: 24,
     duration: 210,
-    artworkURL: "https://cdn.example.test/art.jpg",
-    bitDepth: 24
+    artworkURL: "https://cdn.example.test/art.jpg"
   });
   assert.deepEqual(result, {
     id: "amazon:123",
     title: "Example",
     artist: "Artist",
+    bitDepth: 24,
     duration: 210,
     artworkURL: "https://cdn.example.test/art.jpg"
   });
