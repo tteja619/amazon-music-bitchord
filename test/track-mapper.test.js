@@ -11,6 +11,7 @@ test("maps required and optional BitChord track fields", () => {
     id: "amazon:123",
     title: "Example",
     artist: "Artist",
+    bitDepth: 24,
     duration: 210,
     artworkURL: "https://cdn.example.test/art.jpg",
     bitDepth: 24
