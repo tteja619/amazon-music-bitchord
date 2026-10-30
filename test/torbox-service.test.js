@@ -293,7 +293,7 @@ test("ranks detected hi-res lossless files ahead of CD lossless and lossy fallba
     assert.equal(result.tracks[0].audioQuality, "LOSSLESS");
     assert.equal(result.tracks[0].bitDepth, 24);
     assert.equal(result.tracks[0].sampleRate, 96000);
-    assert.equal(result.tracks[2].audioQuality, undefined);
+    assert.equal(result.tracks[2].audioQuality, "HIGH");
   } finally {
     globalThis.fetch = originalFetch;
   }
