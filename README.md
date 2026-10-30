@@ -9,6 +9,8 @@
 - `POST /torbox/submit`: add a user-supplied magnet to the user's TorBox account
 - `GET /torbox/status?hash={infohash}`: inspect download status and automatically AirLock once complete
 - `GET /torbox/file?torrent_id={id}&file_id={id}`: validate file ownership and obtain a fresh TorBox download URL
+- `GET /torbox/library?q=...`: search audio files in the authenticated TorBox library
+- `GET /torbox/play?id={torrent_id}:{file_id}`: resolve a library track to a fresh playback URL
 - `GET /search?q=...`: catalogue route, not yet connected to a music catalogue
 - `GET /stream/{id}`: playback route, not yet connected to a music catalogue or TorBox file resolution
 
@@ -55,6 +57,24 @@ curl "https://YOUR-WORKER.workers.dev/torbox/status?hash=YOUR_40_CHARACTER_HEX_H
 
 The Cloudflare Cron Trigger also checks tagged items every five minutes, so AirLock does not depend on you reopening the status endpoint.
 
+### Search your TorBox audio library
+
+```sh
+curl "https://YOUR-WORKER.workers.dev/torbox/library?q=artist%20or%20track" \\
+  -H "authorization: Bearer YOUR_ADDON_ACCESS_KEY"
+```
+
+Only completed torrents are searched. Audio extensions are filtered, and each result has an opaque `torrentId:fileId` identifier. The library route does not search public torrent indexes.
+
+### Resolve a library track for playback
+
+```sh
+curl "https://YOUR-WORKER.workers.dev/torbox/play?id=TORRENT_ID:FILE_ID" \\
+  -H "authorization: Bearer YOUR_ADDON_ACCESS_KEY"
+```
+
+This verifies file ownership and requests a fresh temporary TorBox CDN URL. Request the URL immediately before playback.
+
 ### Resolve a file link
 
 ```sh
@@ -68,7 +88,7 @@ The endpoint verifies that the requested file belongs to the specified torrent a
 
 - This implementation accepts a magnet supplied by the caller. It does not search the internet for music torrents.
 - A separate catalogue/index provider is required to search for releases and return magnet links.
-- The BitChord search and playback routes are not yet connected to this TorBox workflow. The file-link service exists, but BitChord playback still needs the catalogue-to-torrent-to-file mapping.
+- The private TorBox library and playback routes now map completed audio files to TorBox file IDs. They require the addon's Bearer access key. The public BitChord `/search` and `/stream/{id}` routes are not connected yet because BitChord's ability to attach a private Bearer header must be confirmed before exposing a personal library.
 - TorBox's torrent API downloads all files in a torrent. Check the release contents and size before submitting it.
 - Use only torrents and files you own, are licensed to download, or are otherwise legally permitted to access and store. AirLock does not grant copyright permission.
 - AirLock availability and storage are subject to the user's TorBox plan and quota.
@@ -81,7 +101,7 @@ Requires Node.js 20 or later.
 npm test
 ```
 
-Tests cover track mapping, provider selection, playback validation, info-hash parsing, cached and uncached submission states, and automatic AirLock verification.
+Tests cover track mapping, provider selection, playback validation, info-hash parsing, cached and uncached submission states, automatic AirLock verification, audio-library filtering, and playback URL resolution.
 
 ## Deployment
 
