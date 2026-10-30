@@ -2,6 +2,7 @@ import { InvalidProviderResponseError, ProviderNotConfiguredError } from "../uti
 
 const API_BASE = "https://api.torbox.app/v1/api";
 const AUTO_AIRLOCK_TAG = "bitchord-auto-airlock";
+const AUTO_AIRLOCK_TAG = "bitchord-auto-airlock";
 
 function requireToken(env) {
   if (!env?.TORBOX_API_TOKEN) {
@@ -122,7 +123,46 @@ export async function ensureAirlocked(env, torrent) {
 }
 
 function isReady(torrent) {
-  return torrent.download_finished === true || torrent.download_state === "cached";
+  return torrent.download_finished === true || torrent.cached === true || torrent.download_state === "cached";
+}
+
+async function updateTorrent(env, torrent, changes = {}) {
+  const payload = {
+    torrent_id: torrent.id,
+    name: torrent.name,
+    tags: Array.isArray(torrent.tags) ? torrent.tags : [],
+    alternative_hashes: Array.isArray(torrent.alternative_hashes) ? torrent.alternative_hashes : [],
+    airlocked: torrent.airlocked === true,
+    ...changes
+  };
+  await apiRequest(env, "/torrents/edittorrent", {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+  return getTorrent(env, torrent.id);
+}
+
+async function markForAutoAirlock(env, torrent) {
+  if (torrent.airlocked === true) return torrent;
+  const tags = Array.isArray(torrent.tags) ? torrent.tags : [];
+  if (tags.includes(AUTO_AIRLOCK_TAG)) return torrent;
+  return updateTorrent(env, torrent, { tags: [...tags, AUTO_AIRLOCK_TAG] });
+}
+
+export async function airlockPendingTorrents(env) {
+  const params = new URLSearchParams({ bypass_cache: "true", limit: "1000" });
+  const data = await apiRequest(env, `/torrents/mylist?${params}`, { method: "GET" });
+  const items = Array.isArray(data) ? data : [];
+  const pending = items.filter(item =>
+    Array.isArray(item.tags) && item.tags.includes(AUTO_AIRLOCK_TAG) &&
+    item.airlocked !== true && isReady(item)
+  );
+  const results = [];
+  for (const torrent of pending) {
+    const verified = await ensureAirlocked(env, torrent);
+    results.push({ torrentId: torrent.id, airlocked: verified.airlocked });
+  }
+  return results;
 }
 
 /**
@@ -154,6 +194,8 @@ export async function submitMagnet(env, magnet, name) {
       airlocked: false
     };
   }
+
+  torrent = await markForAutoAirlock(env, torrent);
 
   if (!isReady(torrent)) {
     return {
