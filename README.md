@@ -27,13 +27,14 @@ The integration uses TorBox's documented API routes and fields. See the [TorBox 
 
 ## API configuration
 
-Set the following as a Cloudflare Worker secret, not as a plaintext Worker variable:
+Set both values as Cloudflare Worker secrets, not as plaintext Worker variables:
 
 ```sh
 npx wrangler secret put TORBOX_API_TOKEN
+npx wrangler secret put ADDON_ACCESS_KEY
 ```
 
-Paste the TorBox API token into the secure prompt. Never commit the token, place it in the manifest, or expose it in a response URL.
+Paste the TorBox API token into the first secure prompt. For the second, generate a strong random key locally (for example, `openssl rand -hex 32`) and paste it into the prompt. Never commit either secret, place them in the manifest, or expose them in response URLs. Both TorBox routes require an `Authorization: Bearer YOUR_ADDON_ACCESS_KEY` header, preventing strangers from using your TorBox quota through the public Worker.
 
 ### Submit a magnet
 
@@ -48,7 +49,8 @@ The endpoint returns the hash, whether TorBox reported a cache hit, the TorBox i
 ### Check status and trigger automatic AirLock
 
 ```sh
-curl "https://YOUR-WORKER.workers.dev/torbox/status?hash=YOUR_40_CHARACTER_HEX_HASH"
+curl "https://YOUR-WORKER.workers.dev/torbox/status?hash=YOUR_40_CHARACTER_HEX_HASH" \\
+  -H "authorization: Bearer YOUR_ADDON_ACCESS_KEY"
 ```
 
 Call this again while the item is downloading. When TorBox reports completion, the route enables and verifies AirLock automatically.
