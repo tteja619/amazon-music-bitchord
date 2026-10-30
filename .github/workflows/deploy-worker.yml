@@ -1,6 +1,14 @@
 name: Deploy BitChord Worker
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "package.json"
+      - "wrangler.toml"
+      - ".github/workflows/deploy-worker.yml"
   workflow_dispatch:
   push:
     branches: [main]
@@ -12,7 +20,7 @@ on:
       - ".github/workflows/deploy-worker.yml"
 
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -23,6 +31,14 @@ jobs:
           node-version: 22
       - name: Run unit tests
         run: npm test
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
       - name: Deploy Worker
         run: npx --yes wrangler@4 deploy
         env:
