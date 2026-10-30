@@ -47,6 +47,17 @@ function badRequest(message) {
   return json({ error: { code: "BAD_REQUEST", message } }, 400);
 }
 
+function requireAddonAccess(request, env) {
+  const accessKey = env.ADDON_ACCESS_KEY;
+  if (!accessKey) {
+    return json({ error: { code: "ADDON_ACCESS_NOT_CONFIGURED" } }, 503);
+  }
+  if (request.headers.get("authorization") !== `Bearer ${accessKey}`) {
+    return json({ error: { code: "UNAUTHORIZED" } }, 401);
+  }
+  return null;
+}
+
 function torboxError(error) {
   if (error instanceof ProviderNotConfiguredError) {
     return json({ error: { code: "TORBOX_NOT_CONFIGURED", message: error.message } }, 503);
@@ -94,6 +105,8 @@ export default {
     }
 
     if (url.pathname === "/torbox/submit" && request.method === "POST") {
+      const denied = requireAddonAccess(request, env);
+      if (denied) return denied;
       try {
         const body = await request.json();
         if (!body || typeof body.magnet !== "string") {
@@ -110,6 +123,8 @@ export default {
     }
 
     if (url.pathname === "/torbox/status" && request.method === "GET") {
+      const denied = requireAddonAccess(request, env);
+      if (denied) return denied;
       const hash = (url.searchParams.get("hash") || "").toLowerCase();
       try {
         const result = await getStatusAndAirlock(env, hash);
