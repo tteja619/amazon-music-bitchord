@@ -123,6 +123,8 @@ export default {
     }
 
     if (url.pathname === "/torbox/file" && request.method === "GET") {
+      const denied = requireAddonAccess(request, env);
+      if (denied) return denied;
       try {
         const torrentId = url.searchParams.get("torrent_id");
         const fileId = url.searchParams.get("file_id");
