@@ -88,7 +88,7 @@ test("does not AirLock an unfinished download", async () => {
     assert.equal(result.status, "downloading");
     assert.equal(result.airlocked, false);
     assert.equal(result.torrentId, 43);
-    assert.deepEqual(edits.map(edit => edit.airlocked), [false]);
+    assert.deepEqual(edits, []);
   } finally {
     globalThis.fetch = originalFetch;
   }
