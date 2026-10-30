@@ -1,13 +1,16 @@
+import { getProvider } from "./providers/index.js";
+import { searchCatalog } from "./services/search-service.js";
+import { resolvePlayback } from "./services/playback-service.js";
 import {
   ProviderNotConfiguredError,
-  searchTracks,
-  resolveStream
-} from "./providers/amazon-music.js";
+  InvalidProviderResponseError,
+  ProtectedStreamUnsupportedError
+} from "./utils/errors.js";
 
 const MANIFEST = {
   id: "in.tteja619.amazon-music-bitchord",
   name: "Amazon Music (API access required)",
-  version: "0.2.0",
+  version: "0.3.0",
   resources: ["search", "stream"],
   allowDownloads: 0,
   checkValidLossless: 0
@@ -43,8 +46,19 @@ function badRequest(message) {
   return json({ error: { code: "BAD_REQUEST", message } }, 400);
 }
 
+function providerError(error) {
+  if (error instanceof ProviderNotConfiguredError) return unavailable();
+  if (error instanceof ProtectedStreamUnsupportedError) {
+    return json({ error: { code: error.code, message: error.message } }, 422);
+  }
+  if (error instanceof InvalidProviderResponseError) {
+    return json({ error: { code: error.code, message: error.message } }, 502);
+  }
+  return json({ error: { code: "PROVIDER_ERROR", message: "The music provider request failed." } }, 502);
+}
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env = {}) {
     const url = new URL(request.url);
 
     if (request.method !== "GET" && request.method !== "HEAD") {
@@ -64,20 +78,18 @@ export default {
       });
     }
 
+    const provider = getProvider(env);
+
     if (url.pathname === "/search") {
       const query = (url.searchParams.get("q") || "").trim();
       if (!query) return badRequest("The q query parameter is required.");
       if (query.length > 200) return badRequest("Search query must be 200 characters or fewer.");
 
       try {
-        const result = await searchTracks(query, url.searchParams, env);
-        if (!result || !Array.isArray(result.tracks)) {
-          return json({ error: { code: "INVALID_PROVIDER_RESPONSE" } }, 502);
-        }
-        return json({ tracks: result.tracks });
+        const result = await searchCatalog(provider, query, url.searchParams);
+        return json(result);
       } catch (error) {
-        if (error instanceof ProviderNotConfiguredError) return unavailable();
-        return json({ error: { code: "PROVIDER_ERROR", message: "The music provider request failed." } }, 502);
+        return providerError(error);
       }
     }
 
@@ -91,17 +103,10 @@ export default {
       if (!trackId || trackId.length > 512) return badRequest("Invalid track id.");
 
       try {
-        const stream = await resolveStream(trackId, url.searchParams, env);
-        if (!stream || typeof stream.url !== "string" || !/^https:\/\//i.test(stream.url)) {
-          return json({ error: { code: "INVALID_STREAM_RESPONSE" } }, 502);
-        }
-        if (stream.encrypted === true) {
-          return json({ error: { code: "PROTECTED_STREAM_UNSUPPORTED" } }, 422);
-        }
+        const stream = await resolvePlayback(provider, trackId, url.searchParams);
         return json(stream);
       } catch (error) {
-        if (error instanceof ProviderNotConfiguredError) return unavailable();
-        return json({ error: { code: "PROVIDER_ERROR", message: "The stream provider request failed." } }, 502);
+        return providerError(error);
       }
     }
 
