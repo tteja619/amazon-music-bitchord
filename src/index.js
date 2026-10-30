@@ -1,7 +1,7 @@
 import { getProvider } from "./providers/index.js";
 import { searchCatalog } from "./services/search-service.js";
 import { resolvePlayback } from "./services/playback-service.js";
-import { submitMagnet, getStatusAndAirlock, getPlayableFile } from "./services/torbox-service.js";
+import { submitMagnet, getStatusAndAirlock, getPlayableFile, airlockCompletedTorrents } from "./services/torbox-service.js";
 import {
   ProviderNotConfiguredError,
   InvalidProviderResponseError,
@@ -84,6 +84,16 @@ function providerError(error) {
 }
 
 export default {
+  async scheduled(_controller, env = {}, _ctx) {
+    try {
+      const result = await airlockCompletedTorrents(env);
+      if (result.errors.length) console.error("TorBox automatic AirLock errors", result.errors);
+      console.log("TorBox automatic AirLock sweep", result);
+    } catch (error) {
+      console.error("TorBox automatic AirLock sweep failed", error);
+    }
+  },
+
   async fetch(request, env = {}) {
     const url = new URL(request.url);
 
