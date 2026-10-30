@@ -208,3 +208,70 @@ test("scheduled sweep AirLocks only completed items tagged by this addon", async
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("lists audio files from completed TorBox torrents and filters by query", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ success: true, data: [
+    {
+      id: 71, name: "Album One", download_finished: true,
+      files: [
+        { id: 1, name: "Artist - First Song.flac", size: 5000 },
+        { id: 2, name: "cover.jpg", size: 1000 }
+      ]
+    },
+    {
+      id: 72, name: "Pending Album", download_finished: false,
+      files: [{ id: 3, name: "Not Ready.mp3", size: 2000 }]
+    }
+  ] });
+  try {
+    const all = await listAudioLibrary({ TORBOX_API_TOKEN: "test-token" });
+    assert.equal(all.total, 1);
+    assert.equal(all.tracks[0].id, "71:1");
+    assert.equal(all.tracks[0].title, "Artist - First Song");
+    assert.equal(all.tracks[0].format, "flac");
+
+    const filtered = await listAudioLibrary({ TORBOX_API_TOKEN: "test-token" }, "first song");
+    assert.equal(filtered.total, 1);
+    assert.equal(filtered.tracks[0].id, "71:1");
+
+    const missing = await listAudioLibrary({ TORBOX_API_TOKEN: "test-token" }, "not present");
+    assert.equal(missing.total, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("resolves a library track to a fresh TorBox URL", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async url => {
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith("/torrents/mylist")) {
+      return Response.json({ success: true, data: {
+        id: 81, name: "Album Two", download_finished: true,
+        files: [{ id: 9, name: "Track Two.flac", size: 9000 }]
+      } });
+    }
+    if (parsed.pathname.endsWith("/torrents/requestdl")) {
+      return Response.json({ success: true, data: "https://cdn.example.test/track-two.flac" });
+    }
+    throw new Error("Unexpected request: " + url);
+  };
+  try {
+    const result = await resolveLibraryTrack({ TORBOX_API_TOKEN: "test-token" }, "81:9");
+    assert.equal(result.ready, true);
+    assert.equal(result.url, "https://cdn.example.test/track-two.flac");
+    assert.equal(result.title, "Track Two");
+    assert.equal(result.format, "flac");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("rejects malformed library track IDs", async () => {
+  await assert.rejects(
+    () => resolveLibraryTrack({ TORBOX_API_TOKEN: "test-token" }, "81:not-a-file"),
+    /numeric torrent and file IDs/
+  );
+});
