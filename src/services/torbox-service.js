@@ -235,7 +235,8 @@ export async function getPlayableFile(env, torrentId, fileId) {
   return {
     ready: true,
     url: link,
-    file: torrent.files.find(file => Number(file.id) === Number(fileId))
+    file: torrent.files.find(file => Number(file.id) === Number(fileId)),
+    torrentName: typeof torrent.name === "string" ? torrent.name : ""
   };
 }
 
@@ -373,6 +374,15 @@ export async function resolveLibraryTrack(env, trackId) {
     url: result.url,
     title: displayTitle(result.file.name),
     format: audioExtension(result.file.name) || undefined,
+    audioQuality: audioProfile(result.file.name, result.torrentName || "").audioQuality,
+    ...(() => {
+      const profile = audioProfile(result.file.name, result.torrentName || "");
+      return {
+        ...(profile.sampleRate ? { sampleRate: profile.sampleRate } : {}),
+        ...(profile.bitDepth ? { bitDepth: profile.bitDepth } : {}),
+        ...(profile.bitrate ? { bitrate: profile.bitrate } : {})
+      };
+    })(),
     size: typeof result.file.size === "number" ? result.file.size : undefined
   };
 }
