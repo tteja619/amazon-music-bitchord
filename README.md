@@ -1,38 +1,66 @@
-# Amazon Music for BitChord
+# TorBox Music for BitChord
 
-**Status: Phase 1 architecture implemented. Amazon provider remains disabled pending authorized API access.** This project does not currently search or play Amazon Music Unlimited.
+**Status: TorBox cache/download/AirLock backend implemented. A music catalogue source and final playback integration are still required.** This addon does not yet provide searchable music results.
 
-## Current implementation
-
-The Cloudflare Worker exposes:
+## Worker routes
 
 - `GET /` and `GET /manifest.json`: BitChord addon manifest
-- `GET /health`: backend health and integration status
-- `GET /search?q=...`: validated catalogue search route
-- `GET /stream/{id}`: validated playback route
+- `GET /health`: Worker and TorBox configuration status
+- `POST /torbox/submit`: add a user-supplied magnet to the user's TorBox account
+- `GET /torbox/status?hash={infohash}`: inspect download status and automatically AirLock once complete
+- `GET /search?q=...`: catalogue route, not yet connected to a music catalogue
+- `GET /stream/{id}`: playback route, not yet connected to TorBox file resolution
 
-The backend is now separated into provider adapters, services, mapping, and shared errors:
+## Automatic cache and AirLock workflow
 
-- `src/index.js`: HTTP routes and error-to-HTTP mapping
-- `src/providers/index.js`: provider selection
-- `src/providers/amazon-music.js`: Amazon adapter boundary, deliberately fail-closed
-- `src/providers/mock-provider.js`: development-only search fixture, not real Amazon data
-- `src/services/search-service.js`: catalogue search orchestration
-- `src/services/playback-service.js`: strict playback response validation
-- `src/mappers/track-mapper.js`: provider-neutral to BitChord track mapping
-- `src/utils/errors.js`: typed provider and playback errors
-- `test/track-mapper.test.js`: contract and safety tests
+1. Validate the supplied magnet URI and extract its 40-character hexadecimal BitTorrent info hash.
+2. Check TorBox cache availability using `GET /torrents/checkcached`.
+3. Add the magnet to the authenticated TorBox account using `POST /torrents/createtorrent`.
+4. Look up the user's torrent entry using `GET /torrents/mylist`.
+5. If TorBox reports `download_finished: true` or `cached: true`, set `airlocked: true` using `PUT /torrents/edittorrent`.
+6. Verify the change by fetching the torrent entry again and requiring `airlocked: true`.
+7. If the download is still in progress, call the status route again later. It will AirLock automatically after completion.
 
-## Development fixture
+Already-AirLocked items are left unchanged. An AirLock request is never reported as successful unless TorBox confirms the resulting `airlocked: true` state.
 
-The mock provider is selected only when BOTH Worker environment values are set:
+The integration uses TorBox's documented API routes and fields. See the [TorBox API documentation](https://api-docs.torbox.app/) and [TorBox AirLock help article](https://support.torbox.app/en/articles/15417147-torbox-airlock).
 
-- `APP_ENV=development`
-- `MUSIC_PROVIDER=mock`
+## API configuration
 
-In that configuration, `/search?q=...` returns a clearly labelled fixture track. It is not Amazon catalogue data. The mock provider does not provide audio playback.
+Set the following as a Cloudflare Worker secret, not as a plaintext Worker variable:
 
-Do not enable these values in production. The default provider is always the fail-closed Amazon adapter.
+```sh
+npx wrangler secret put TORBOX_API_TOKEN
+```
+
+Paste the TorBox API token into the secure prompt. Never commit the token, place it in the manifest, or expose it in a response URL.
+
+### Submit a magnet
+
+```sh
+curl -X POST "https://YOUR-WORKER.workers.dev/torbox/submit" \
+  -H "content-type: application/json" \
+  -d '{"magnet":"magnet:?xt=urn:btih:YOUR_40_CHARACTER_HEX_HASH"}'
+```
+
+The endpoint returns the hash, whether TorBox reported a cache hit, the TorBox item ID when available, current status, and AirLock confirmation.
+
+### Check status and trigger automatic AirLock
+
+```sh
+curl "https://YOUR-WORKER.workers.dev/torbox/status?hash=YOUR_40_CHARACTER_HEX_HASH"
+```
+
+Call this again while the item is downloading. When TorBox reports completion, the route enables and verifies AirLock automatically.
+
+## Important limitations
+
+- This implementation accepts a magnet supplied by the caller. It does not search the internet for music torrents.
+- A separate catalogue/index provider is required to search for releases and return magnet links.
+- The BitChord search and playback routes are not yet connected to this TorBox workflow. File selection and TorBox download-link resolution must be integrated before in-app playback works.
+- TorBox's torrent API downloads all files in a torrent. Check the release contents and size before submitting it.
+- Use only torrents and files you own, are licensed to download, or are otherwise legally permitted to access and store. AirLock does not grant copyright permission.
+- AirLock availability and storage are subject to the user's TorBox plan and quota.
 
 ## Tests
 
@@ -42,25 +70,13 @@ Requires Node.js 20 or later.
 npm test
 ```
 
-The tests cover track mapping, required metadata, development-only mock selection, and strict playback URL/encryption validation.
-
-## Amazon API access
-
-Amazon's [official Music Developer Portal](https://developer.amazon.com/docs/music/landing_home) describes the Amazon Music Web API as closed beta. A working provider requires Amazon to authorize this application and provide its approved API contract.
-
-Do not put Amazon credentials in source files, GitHub commits, or the manifest. Use Cloudflare Worker secrets for confidential credentials and implement only the documented authorization and refresh flow.
-
-## Playback compatibility and safety
-
-BitChord expects an absolute playable URL. This adapter accepts a stream only when the provider explicitly reports `encrypted: false`. Protected or encrypted streams are rejected. Do not extract private app tokens, reuse session cookies, scrape protected playback sessions, proxy protected streams, or bypass DRM.
-
-Catalogue search and playback are separate capabilities. Authorization for catalogue access must not be assumed to include playback permission.
+Tests cover track mapping, provider selection, playback validation, info-hash parsing, cached and uncached submission states, and automatic AirLock verification.
 
 ## Deployment
 
-The existing GitHub Actions workflow deploys changes under `src/**` to Cloudflare Workers. Repository secrets:
+GitHub Actions runs tests before deploying the Cloudflare Worker. Repository secrets:
 
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 
-The Worker root URL is the BitChord installation URL. The static GitHub raw manifest URL is not a replacement for the Worker backend.
+The TorBox token is configured separately as the Worker secret `TORBOX_API_TOKEN`. The Worker root URL remains the BitChord installation URL.
