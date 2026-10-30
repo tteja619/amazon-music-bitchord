@@ -267,6 +267,49 @@ export async function airlockCompletedTorrents(env) {
 
 
 const AUDIO_EXTENSIONS = new Set(["flac", "mp3", "m4a", "aac", "alac", "wav", "aiff", "aif", "opus", "ogg", "oga", "wma"]);
+const LOSSLESS_FORMATS = new Set(["flac", "alac", "wav", "aiff", "aif"]);
+
+function audioProfile(filename, torrentName = "") {
+  const text = `${filename || ""} ${torrentName || ""}`.toLowerCase();
+  const ext = audioExtension(filename);
+  const explicitAlac = /\\balac\\b/.test(text);
+  const lossless = LOSSLESS_FORMATS.has(ext) || (ext === "m4a" && explicitAlac);
+  const depthMatch = text.match(/(?:24|32|16|8)\\s*[- ]?bit/);
+  const rateMatch = text.match(/(\d{2,3}(?:\.\d+)?)\\s*k(?:hz)?/);
+  const bitDepth = depthMatch ? Number(depthMatch[0].match(/\\d+/)[0]) : undefined;
+  const sampleRate = rateMatch ? Math.round(Number(rateMatch[1]) * 1000) : undefined;
+  const bitrateMatch = text.match(/(\\d{2,4})\\s*kbps/);
+  const bitrate = bitrateMatch ? Number(bitrateMatch[1]) : undefined;
+  let audioQuality;
+  if (lossless) audioQuality = "LOSSLESS";
+  else if (bitrate !== undefined) audioQuality = bitrate >= 256 ? "HIGH" : "LOW";
+  return {
+    format: ext,
+    lossless,
+    audioQuality,
+    bitDepth,
+    sampleRate,
+    bitrate
+  };
+}
+
+function qualityScore(track) {
+  const lossless = track.audioQuality === "LOSSLESS" ? 1 : 0;
+  const depth = Number(track.bitDepth) || 0;
+  const rate = Number(track.sampleRate) || 0;
+  const formatRank = ({ flac: 4, alac: 3, wav: 2, aiff: 1, aif: 1 })[track.format] || 0;
+  const bitrate = Number(track.bitrate) || 0;
+  return [lossless, depth, rate, formatRank, bitrate];
+}
+
+function compareQuality(a, b) {
+  const left = qualityScore(a);
+  const right = qualityScore(b);
+  for (let i = 0; i < left.length; i += 1) {
+    if (left[i] !== right[i]) return right[i] - left[i];
+  }
+  return a.title.localeCompare(b.title);
+}
 
 function audioExtension(filename) {
   const match = /\.([a-z0-9]+)$/i.exec(String(filename || ""));
@@ -296,17 +339,25 @@ export async function listAudioLibrary(env, query = "") {
       const haystack = [title, torrent.name, file.name].filter(Boolean).join(" ").toLocaleLowerCase();
       if (needle && !haystack.includes(needle)) continue;
       if (file.id === undefined || file.id === null) continue;
+      const profile = audioProfile(file.name, torrent.name);
       tracks.push({
         id: String(torrent.id) + ":" + String(file.id),
         title,
         album: typeof torrent.name === "string" ? torrent.name : undefined,
         format: extension,
+        audioQuality: profile.audioQuality,
+        ...(profile.bitDepth ? { bitDepth: profile.bitDepth } : {}),
+        ...(profile.sampleRate ? { sampleRate: profile.sampleRate } : {}),
+        ...(profile.bitrate ? { bitrate: profile.bitrate } : {}),
         torrentId: torrent.id,
         fileId: file.id,
-        size: typeof file.size === "number" ? file.size : undefined
+        size: typeof file.size === "number" ? file.size : undefined,
+        _qualitySort: qualityScore({ ...profile, title })
       });
     }
   }
+  tracks.sort(compareQuality);
+  for (const track of tracks) delete track._qualitySort;
   return { tracks, total: tracks.length };
 }
 
