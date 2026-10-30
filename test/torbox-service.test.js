@@ -56,6 +56,7 @@ test("automatically AirLocks a cached torrent after adding it to the account", a
 test("does not AirLock an unfinished download", async () => {
   const originalFetch = globalThis.fetch;
   const edits = [];
+  let tags = [];
   globalThis.fetch = async (url, options = {}) => {
     const parsed = new URL(url);
     if (parsed.pathname.endsWith("/torrents/mylist") && !parsed.searchParams.has("id")) {
@@ -68,14 +69,16 @@ test("does not AirLock an unfinished download", async () => {
       return Response.json({ success: true, data: { hash: HASH, torrent_id: 43 } });
     }
     if (parsed.pathname.endsWith("/torrents/edittorrent")) {
-      edits.push(JSON.parse(options.body));
+      const body = JSON.parse(options.body);
+      edits.push(body);
+      tags = body.tags;
       return Response.json({ success: true, data: null });
     }
     if (parsed.pathname.endsWith("/torrents/mylist") && parsed.searchParams.get("id") === "43") {
       return Response.json({ success: true, data: {
         id: 43, hash: HASH, name: "Test Album", cached: false,
         download_finished: false, download_state: "downloading",
-        tags: ["bitchord-auto-airlock"], airlocked: false
+        tags, airlocked: false
       } });
     }
     throw new Error("Unexpected request: " + url);
