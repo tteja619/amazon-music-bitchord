@@ -1,7 +1,7 @@
 import { getProvider } from "./providers/index.js";
 import { searchCatalog } from "./services/search-service.js";
 import { resolvePlayback } from "./services/playback-service.js";
-import { submitMagnet, getStatusAndAirlock } from "./services/torbox-service.js";
+import { submitMagnet, getStatusAndAirlock, getPlayableFile } from "./services/torbox-service.js";
 import {
   ProviderNotConfiguredError,
   InvalidProviderResponseError,
@@ -33,8 +33,8 @@ function json(data, status = 200) {
 function unavailable() {
   return json({
     error: {
-      code: "AMAZON_MUSIC_API_NOT_CONFIGURED",
-      message: "Amazon Music API access has not been authorized and configured for this addon."
+      code: "MUSIC_CATALOGUE_NOT_CONFIGURED",
+      message: "A music catalogue provider has not been configured for this addon."
     }
   }, 503);
 }
@@ -117,6 +117,17 @@ export default {
         }
         const result = await submitMagnet(env, body.magnet, body.name);
         return json(result, 202);
+      } catch (error) {
+        return torboxError(error);
+      }
+    }
+
+    if (url.pathname === "/torbox/file" && request.method === "GET") {
+      try {
+        const torrentId = url.searchParams.get("torrent_id");
+        const fileId = url.searchParams.get("file_id");
+        const result = await getPlayableFile(env, torrentId, fileId);
+        return json(result);
       } catch (error) {
         return torboxError(error);
       }
