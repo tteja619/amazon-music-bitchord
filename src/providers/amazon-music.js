@@ -1,32 +1,30 @@
 /**
  * Amazon Music provider boundary.
  *
- * Do not add undocumented Amazon endpoints, private app APIs, cookie/session
- * extraction, or DRM workarounds here. Implement these functions only against
- * an API contract and credentials Amazon has explicitly authorized for this app.
+ * Implement only against an API contract and credentials Amazon has explicitly
+ * authorized for this application. Do not add undocumented endpoints, private
+ * app APIs, cookie/session extraction, or DRM workarounds.
  */
+import { ProviderNotConfiguredError } from "../utils/errors.js";
 
-export class ProviderNotConfiguredError extends Error {
-  constructor() {
-    super("Amazon Music API access is not configured for this addon.");
-    this.name = "ProviderNotConfiguredError";
-    this.code = "AMAZON_MUSIC_API_NOT_CONFIGURED";
-  }
-}
+export { ProviderNotConfiguredError } from "../utils/errors.js";
 
 /**
- * Expected internal result: { tracks: BitChordTrack[] }
- * BitChordTrack requires id and title. Optional fields include artist, album,
- * duration, artworkURL, format, and audioQuality.
+ * Expected provider-neutral result: { tracks: Array<ProviderTrack> }.
+ * Required fields: id and title. Optional metadata must be sourced accurately.
  */
 export async function searchTracks(_query, _options, _env) {
-  throw new ProviderNotConfiguredError();
+  throw new ProviderNotConfiguredError(
+    "Amazon Music catalogue access has not been authorized for this application."
+  );
 }
 
 /**
- * Expected internal result: a BitChord stream descriptor with a directly
- * playable, authorized, unencrypted URL and accurate codec/container metadata.
+ * Expected result: an authorized, directly playable HTTPS URL and accurate
+ * metadata. The playback service requires encrypted === false explicitly.
  */
 export async function resolveStream(_trackId, _options, _env) {
-  throw new ProviderNotConfiguredError();
+  throw new ProviderNotConfiguredError(
+    "Amazon Music playback access has not been authorized for this application."
+  );
 }
