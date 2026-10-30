@@ -2,7 +2,6 @@ import { InvalidProviderResponseError, ProviderNotConfiguredError } from "../uti
 
 const API_BASE = "https://api.torbox.app/v1/api";
 const AUTO_AIRLOCK_TAG = "bitchord-auto-airlock";
-const AUTO_AIRLOCK_TAG = "bitchord-auto-airlock";
 
 function requireToken(env) {
   if (!env?.TORBOX_API_TOKEN) {
