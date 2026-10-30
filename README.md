@@ -8,6 +8,7 @@
 - `GET /health`: Worker and TorBox configuration status
 - `POST /torbox/submit`: add a user-supplied magnet to the user's TorBox account
 - `GET /torbox/status?hash={infohash}`: inspect download status and automatically AirLock once complete
+- `GET /torbox/file?torrent_id={id}&file_id={id}`: verify file ownership and obtain a short-lived TorBox CDN link
 - `GET /search?q=...`: catalogue route, not yet connected to a music catalogue
 - `GET /stream/{id}`: playback route, not yet connected to TorBox file resolution
 
@@ -16,10 +17,10 @@
 1. Validate the supplied magnet URI and extract its 40-character hexadecimal BitTorrent info hash.
 2. Check TorBox cache availability using `GET /torrents/checkcached`.
 3. Add the magnet to the authenticated TorBox account using `POST /torrents/createtorrent`.
-4. Look up the user's torrent entry using `GET /torrents/mylist`.
+4. Use the returned `torrent_id` to retrieve the user's torrent entry using `GET /torrents/mylist?id=...`.
 5. If TorBox reports `download_finished: true` or `cached: true`, set `airlocked: true` using `PUT /torrents/edittorrent`.
 6. Verify the change by fetching the torrent entry again and requiring `airlocked: true`.
-7. If the download is still in progress, call the status route again later. It will AirLock automatically after completion.
+7. If the download is still in progress, the client must call the status route again later. That status check will AirLock automatically after completion. This implementation does not run a background poller.
 
 Already-AirLocked items are left unchanged. An AirLock request is never reported as successful unless TorBox confirms the resulting `airlocked: true` state.
 
@@ -55,6 +56,10 @@ curl "https://YOUR-WORKER.workers.dev/torbox/status?hash=YOUR_40_CHARACTER_HEX_H
 
 Call this again while the item is downloading. When TorBox reports completion, the route enables and verifies AirLock automatically.
 
+## File playback link
+
+After a torrent is complete, call `GET /torbox/file?torrent_id=...&file_id=...`. The Worker checks that the requested file belongs to the authenticated user's torrent and then asks TorBox for its temporary CDN URL. The URL should be requested immediately before playback, not stored permanently. This endpoint is available for integration, but the BitChord `/stream/{id}` contract and catalogue search still need to be connected to it.
+
 ## Important limitations
 
 - This implementation accepts a magnet supplied by the caller. It does not search the internet for music torrents.
@@ -72,7 +77,7 @@ Requires Node.js 20 or later.
 npm test
 ```
 
-Tests cover track mapping, provider selection, playback validation, info-hash parsing, cached and uncached submission states, and automatic AirLock verification.
+Tests cover track mapping, provider selection, playback validation, info-hash parsing, cached and uncached submission states, automatic AirLock verification, file ownership checks, and TorBox CDN link generation.
 
 ## Deployment
 
