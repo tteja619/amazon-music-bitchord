@@ -1,0 +1,11 @@
+{
+  "id": "in.tteja619.amazon-music-bitchord",
+  "name": "Amazon Music (Authorization Required)",
+  "version": "0.1.0",
+  "resources": [
+    "search",
+    "stream"
+  ],
+  "allowDownloads": 0,
+  "checkValidLossless": 0
+}
