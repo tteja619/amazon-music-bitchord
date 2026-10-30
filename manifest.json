@@ -1,7 +1,7 @@
 {
   "id": "in.tteja619.amazon-music-bitchord",
-  "name": "Amazon Music (API access required)",
-  "version": "0.3.0",
+  "name": "TorBox Music (catalogue source required)",
+  "version": "0.4.0",
   "resources": [
     "search",
     "stream"
