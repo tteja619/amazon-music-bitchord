@@ -183,6 +183,12 @@ test("scheduled sweep AirLocks only completed items tagged by this addon", async
       assert.deepEqual(body.tags, ["bitchord-auto-airlock"]);
       return Response.json({ success: true, data: null });
     }
+    if (parsed.pathname.endsWith("/torrents/mylist") && parsed.searchParams.get("id") === "61") {
+      return Response.json({ success: true, data: {
+        id: 61, hash: HASH, name: "owned.flac", download_finished: true,
+        airlocked: true, tags: ["bitchord-auto-airlock"]
+      } });
+    }
     throw new Error("Unexpected request: " + url);
   };
   try {
