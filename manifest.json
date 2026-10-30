@@ -1,11 +1,32 @@
 {
   "id": "in.tteja619.amazon-music-bitchord",
-  "name": "TorBox Music (catalogue source required)",
-  "version": "0.5.0",
+  "name": "TorBox Music (personal library)",
+  "version": "0.6.0",
   "resources": [
     "search",
     "stream"
   ],
   "allowDownloads": 0,
-  "checkValidLossless": 0
+  "checkValidLossless": 0,
+  "settings": [
+    {
+      "key": "quality",
+      "type": "select",
+      "default": "lossless",
+      "options": [
+        {
+          "label": "Lossless first",
+          "value": "lossless"
+        },
+        {
+          "label": "High quality",
+          "value": "high"
+        },
+        {
+          "label": "Low bandwidth",
+          "value": "low"
+        }
+      ]
+    }
+  ]
 }
